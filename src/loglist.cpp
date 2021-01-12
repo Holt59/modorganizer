@@ -17,6 +17,8 @@ You should have received a copy of the GNU General Public License
 along with Mod Organizer.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <QStyledItemDelegate>
+
 #include "loglist.h"
 #include "organizercore.h"
 
@@ -158,6 +160,53 @@ QVariant LogModel::headerData(int, Qt::Orientation, int) const
   return {};
 }
 
+// this is mostly from https://stackoverflow.com/a/35418703/2666289
+//
+class WordItemDelegate : public QStyledItemDelegate {
+public:
+  using QStyledItemDelegate::QStyledItemDelegate;
+
+  QString anchorAt(QString html, const QPoint& point) const
+  {
+    QTextDocument doc;
+    doc.setMarkdown(html);
+
+    auto textLayout = doc.documentLayout();
+    Q_ASSERT(textLayout != 0);
+    return textLayout->anchorAt(point);
+  }
+
+  void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+  {
+    auto options = option;
+    initStyleOption(&options, index);
+
+    painter->save();
+
+    QTextDocument doc;
+    doc.setMarkdown(options.text);
+
+    options.text = "";
+    options.widget->style()->drawControl(QStyle::CE_ItemViewItem, &option, painter);
+
+    painter->translate(options.rect.left(), options.rect.top());
+    QRect clip(0, 0, options.rect.width(), options.rect.height());
+    doc.drawContents(painter, clip);
+
+    painter->restore();
+  }
+
+  QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override
+  {
+    QStyleOptionViewItemV4 options = option;
+    initStyleOption(&options, index);
+
+    QTextDocument doc;
+    doc.setMarkdown(options.text);
+    doc.setTextWidth(options.rect.width());
+    return QSize(doc.idealWidth(), doc.size().height());
+  }
+};
 
 LogList::LogList(QWidget* parent)
   : QTreeView(parent), m_core(nullptr)
@@ -171,6 +220,9 @@ LogList::LogList(QWidget* parent)
   setAutoScroll(true);
   scrollToBottom();
 
+  setMouseTracking(true);
+  setItemDelegateForColumn(2, new WordItemDelegate(this));
+
   connect(
     this, &QWidget::customContextMenuRequested,
     [&](auto&& pos){ onContextMenu(pos); });
@@ -180,6 +232,64 @@ LogList::LogList(QWidget* parent)
 
   m_timer.setSingleShot(true);
   connect(&m_timer, &QTimer::timeout, [&]{ scrollToBottom(); });
+}
+
+
+void LogList::mousePressEvent(QMouseEvent* event) {
+  QTreeView::mousePressEvent(event);
+
+  auto anchor = anchorAt(event->pos());
+  m_mousePressAnchor = anchor;
+}
+
+void LogList::mouseMoveEvent(QMouseEvent* event) {
+  auto anchor = anchorAt(event->pos());
+
+  if (m_mousePressAnchor != anchor) {
+    m_mousePressAnchor.clear();
+  }
+
+  if (m_lastHoveredAnchor != anchor) {
+    m_lastHoveredAnchor = anchor;
+    if (!m_lastHoveredAnchor.isEmpty()) {
+      QApplication::setOverrideCursor(QCursor(Qt::PointingHandCursor));
+    }
+    else {
+      QApplication::restoreOverrideCursor();
+    }
+  }
+}
+
+void LogList::mouseReleaseEvent(QMouseEvent* event) {
+  if (!m_mousePressAnchor.isEmpty()) {
+    auto anchor = anchorAt(event->pos());
+
+    if (anchor == m_mousePressAnchor) {
+      emit linkActivated(m_mousePressAnchor);
+    }
+
+    m_mousePressAnchor.clear();
+  }
+
+  QTreeView::mouseReleaseEvent(event);
+}
+
+QString LogList::anchorAt(const QPoint& pos) const {
+  auto index = indexAt(pos);
+  if (index.isValid()) {
+    auto delegate = itemDelegate(index);
+    auto wordDelegate = dynamic_cast<WordItemDelegate*>(delegate);
+    if (wordDelegate != 0) {
+      auto itemRect = visualRect(index);
+      auto relativeClickPosition = pos - itemRect.topLeft();
+
+      auto html = model()->data(index, Qt::DisplayRole).toString();
+
+      return wordDelegate->anchorAt(html, relativeClickPosition);
+    }
+  }
+
+  return QString();
 }
 
 void LogList::onNewEntry()

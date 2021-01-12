@@ -74,9 +74,22 @@ public:
 
   QMenu* createMenu(QWidget* parent=nullptr);
 
+signals:
+  void linkActivated(QString link);
+
+protected:
+  void mousePressEvent(QMouseEvent* event) override;
+  void mouseMoveEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
+
+  QString anchorAt(const QPoint& pos) const;
+
 private:
   OrganizerCore* m_core;
   QTimer m_timer;
+
+  QString m_mousePressAnchor;
+  QString m_lastHoveredAnchor;
 
   void onContextMenu(const QPoint& pos);
   void onNewEntry();

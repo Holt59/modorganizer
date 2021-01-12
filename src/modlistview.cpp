@@ -843,6 +843,13 @@ void ModListView::setup(OrganizerCore& core, CategoryFactory& factory, MainWindo
       refreshExpandedItems();
     }
   });
+
+  // connect log message
+  connect(mwui->logList, &LogList::linkActivated, [=](const auto& anchor) {
+    if (anchor == "modlist#sortbypriority") {
+      sortByColumn(ModList::COL_PRIORITY);
+    }
+  });
 }
 
 void ModListView::restoreState(const Settings& s)
@@ -1299,7 +1306,7 @@ void ModListView::dragEnterEvent(QDragEnterEvent* event)
 
   if (dropInfo.isValid() && !dropInfo.isLocalFileDrop()
     && sortColumn() != ModList::COL_PRIORITY) {
-    log::warn("Drag&Drop is only supported when sorting by priority.");
+    log::warn("Drag&Drop is only supported when sorting by priority. [Click here to sort by priority.](modlist#sortbypriority)");
   }
 }
 
